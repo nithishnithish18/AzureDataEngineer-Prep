@@ -1,0 +1,101 @@
+task-1
+
+from pyspark.sql.types import *
+from pypspark.sql imoport SparkSession
+
+account_name = "nitheeshstorageaccount"
+container_name = "data"
+relative_path = "raw"
+
+adls_path = 'abfss://%s@%s.dfs.core.windows.net/%s' %(container_name,account_name,relative_path)
+
+spark.conf.set("fs.azure.account.auth.type.%s.dfs.core.windows.net" %account_name,"SharedKey")
+spark.conf.set("fs.azure.account.key.%s.dfs.core.windows.net" %account_name,"yLEMBzhYU00N4JLzjavtVaokYmCEvqF2ykTUOhNh66V1tmaIp7oB1YS5XzbNpHZyQSLp2Bq8GX/x+AStra54Ww==")
+
+df = spark.read.option("header","true").option("delimiter",",").csv(adls_path+"/Log.csv")
+
+display(df)
+
+
+task-2
+
+#perform groupBy and filter null rows
+
+newDF = df.groupBy("Operationname").agg(count('Correlationid').alias('Total_Operation')).orderBy(col("Total_Operations").desc())
+filteredDF = newDF.filter(col("Operationname").isNotNull())
+
+display(filteredDF)
+
+
+task-3
+#sparksql
+
+filteredDF.createOrReplaceTempView('logdata')
+sqlDF = spark.sql("select Operationname,count(Correlationid) from logdata group by Operationname")
+sqlDF.show()
+
+
+task-4
+#Create schema and write DF to dedicated SQL pool.
+
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.functions._
+
+
+val dataSchema = StructType(Array(
+    StructField("Id", IntegerType, true),
+    StructField("Correlationid", StringType, true),
+    StructField("Operationname", StringType, true),
+    StructField("Status", StringType, true),
+    StructField("Eventcategory", StringType, true),
+    StructField("Level", StringType, true),
+    StructField("Time", TimestampType, true),
+    StructField("Subscription", StringType, true),
+    StructField("Eventinitiatedby", StringType, true),
+    StructField("Resourcetype", StringType, true),
+    StructField("Resourcegroup", StringType, true)))
+
+
+val df = spark.read.format("csv").option("header","true").schema(dataSchema).load("abfss://data@datalake2000.dfs.core.windows.net/raw/Log.csv")
+
+df.printSchema()
+
+
+task-5
+#copy dataframe from spark pool to dedicated SQL pool.
+
+import com.microsoft.spark.sqlanalytics.utils.Constants
+import org.apache.spark.sql.SqlAnalyticsConnector._
+df.write.sqlanalytics("mydedicatedpool.dbo.logdata", Constants.INTERNAL)
+
+
+task-6
+#creating spark table on spark pool metastore.
+val df = spark.read.sqlanalytics('mydedicatedpool.dbo.logdata')
+df.write.mode('overwrite').saveAsTable('logdatainternal')
+
+%%sql
+select count(*) from logdatainternal 
+
+
+task-7
+#create spark table in internaldb
+CREATE DATABASE internaldb
+
+df = spark.read.load('abfss://data@nitheeshstorageaccount.dfs.core.windows.net/raw/Log.csv,format='csv',header='True')
+df.write.mode('overwrite').saveAsTable('internaldb.logdatanew')
+
+
+task-8
+#create dataframe from json file
+
+from pyspark.sql.functions import *
+
+df = spark.read.load('abfss://data@nitheeshstorageaccount.dfs.core.windows.net/raw/customer_arr.json',format='json',header='True')
+newDF = df.select(col('customerid'),col('customername'),col('registered'),explode(col('courses')))
+display(newDF)
+
+
+df = spark.read.load('abfss://data@nitheeshstorageaccount.dfs.core.windows.net/raw/customer_obj.json',format='json',header='True')
+newDF = df.select(col('customerid'),col('customername'),col('registered'),explode(col('courses')),col('details.mobile'),col('details.city'))
+display(newDF)
